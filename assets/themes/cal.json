@@ -1,0 +1,33 @@
+{
+  "id": "cal",
+  "name": "Calendar",
+  "description": "Indigo accent pack for the Calendar module",
+  "primary": "#4F46E5",
+  "primarySoft": "#818CF8",
+  "tint": "#EEF2FF",
+  "background": "#F3F0FA",
+  "card": "#FFFFFF",
+  "text": "#111827",
+  "muted": "#4B5563",
+  "softBlue": "#E0F2FE",
+  "softGreen": "#DCFCE7",
+  "softAmber": "#FEF3C7",
+  "softRed": "#FEE2E2",
+  "low": "#16A34A",
+  "medium": "#D97706",
+  "high": "#DC2626",
+  "palette": [
+    "#4F46E5",
+    "#2563EB",
+    "#16A34A",
+    "#7C3AED",
+    "#0EA5E9",
+    "#DB2777"
+  ],
+  "radii": {
+    "sm": 14,
+    "md": 16,
+    "lg": 20,
+    "xl": 24
+  }
+}

@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // TEMP: open while sign-in is paused (AppConfig.skipSignIn).
+    // Switch back to auth-only rules before any real release.
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

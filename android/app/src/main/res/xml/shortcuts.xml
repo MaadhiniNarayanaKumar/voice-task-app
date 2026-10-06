@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="add_task"
+        android:shortcutShortLabel="@string/add_task_short"
+        android:shortcutLongLabel="@string/add_task_long">
+        <intent
+            android:action="com.example.voice_task_app.ADD_TASK"
+            android:targetPackage="com.example.voice_task_app"
+            android:targetClass="com.example.voice_task_app.MainActivity" />
+        <capability-binding android:key="actions.intent.CREATE_ITEM_LIST">
+            <parameter-binding
+                android:key="itemList.name"
+                android:value="@string/add_task_long" />
+        </capability-binding>
+    </shortcut>
+    <capability android:name="actions.intent.CREATE_ITEM_LIST">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.example.voice_task_app"
+            android:targetClass="com.example.voice_task_app.MainActivity">
+            <url-template android:value="mia://add?text={text}" />
+            <parameter
+                android:name="itemList.name"
+                android:key="text" />
+        </intent>
+    </capability>
+    <capability android:name="custom.actions.intent.ADD_TASK">
+        <intent
+            android:action="com.example.voice_task_app.ADD_TASK"
+            android:targetPackage="com.example.voice_task_app"
+            android:targetClass="com.example.voice_task_app.MainActivity">
+            <parameter
+                android:name="task"
+                android:key="task" />
+        </intent>
+    </capability>
+</shortcuts>

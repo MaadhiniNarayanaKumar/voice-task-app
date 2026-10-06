@@ -1,0 +1,33 @@
+{
+  "id": "mia",
+  "name": "Mia",
+  "description": "Default purple voice-task theme",
+  "primary": "#4F46E5",
+  "primarySoft": "#818CF8",
+  "tint": "#EEF2FF",
+  "background": "#F3F0FA",
+  "card": "#FFFFFF",
+  "text": "#111827",
+  "muted": "#4B5563",
+  "softBlue": "#E0F2FE",
+  "softGreen": "#DCFCE7",
+  "softAmber": "#FEF3C7",
+  "softRed": "#FEE2E2",
+  "low": "#16A34A",
+  "medium": "#D97706",
+  "high": "#DC2626",
+  "palette": [
+    "#4F46E5",
+    "#7C3AED",
+    "#0284C7",
+    "#16A34A",
+    "#D97706",
+    "#DB2777"
+  ],
+  "radii": {
+    "sm": 14,
+    "md": 16,
+    "lg": 20,
+    "xl": 24
+  }
+}

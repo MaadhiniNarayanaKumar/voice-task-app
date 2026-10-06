@@ -1,0 +1,20 @@
+{
+  "defaultThemeId": "mia",
+  "themes": [
+    {
+      "id": "mia",
+      "asset": "assets/themes/mia.json",
+      "feature": "tasks"
+    },
+    {
+      "id": "focus",
+      "asset": "assets/themes/focus.json",
+      "feature": "focus"
+    },
+    {
+      "id": "cal",
+      "asset": "assets/themes/cal.json",
+      "feature": "calendar"
+    }
+  ]
+}

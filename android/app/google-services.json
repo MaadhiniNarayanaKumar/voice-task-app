@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "685808259843",
+    "project_id": "voice-task-app-bym",
+    "storage_bucket": "voice-task-app-bym.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:685808259843:android:7447c7d40a05c36846cf36",
+        "android_client_info": {
+          "package_name": "com.example.voice_task_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCkAO6RyR9JaaEeY4ENlJToz11aSK49t_w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
