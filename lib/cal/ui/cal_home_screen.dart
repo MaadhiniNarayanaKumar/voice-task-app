@@ -7,6 +7,7 @@ import '../../core/ui/app_components.dart';
 import '../../mia/widgets/mia_bottom_bar.dart';
 import '../data/cal_repository.dart';
 import '../models/cal_event.dart';
+import '../models/cal_event_dedupe.dart';
 import '../models/cal_event_source.dart';
 import 'add_cal_event_sheet.dart';
 import 'cal_style.dart';
@@ -37,12 +38,87 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
   late DateTime _focusedDay;
   DateTime? _lastSynced;
   String _syncLabel = 'Pull to refresh';
+  String _streamKey = '';
+  late Stream<List<CalEvent>> _eventsStream;
+
+  static const _months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+
+  static const _monthsShort = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
     _focusedDay = DateTime(now.year, now.month, now.day);
+    _bindStream();
+  }
+
+  bool get _canStepRange =>
+      _view == _CalView.week || _view == _CalView.month;
+
+  (DateTime, DateTime)? _queryRange() {
+    switch (_view) {
+      case _CalView.agenda:
+        return null;
+      case _CalView.day:
+      case _CalView.week:
+        final start = _weekDays.first;
+        final last = _weekDays.last;
+        return (
+          start,
+          DateTime(last.year, last.month, last.day, 23, 59, 59),
+        );
+      case _CalView.month:
+        return (
+          DateTime(_focusedDay.year, _focusedDay.month, 1),
+          DateTime(_focusedDay.year, _focusedDay.month + 1, 0, 23, 59, 59),
+        );
+    }
+  }
+
+  void _bindStream() {
+    final range = _queryRange();
+    final key = range == null
+        ? 'agenda'
+        : '${_view.name}|${range.$1.toIso8601String()}|${range.$2.toIso8601String()}';
+    if (key == _streamKey) return;
+    _streamKey = key;
+    _eventsStream = range == null
+        ? _repo.watchAgenda(widget.uid)
+        : _repo.watchEvents(widget.uid, from: range.$1, to: range.$2);
+  }
+
+  void _stepRange(int delta) {
+    setState(() {
+      if (_view == _CalView.month) {
+        final shifted = DateTime(_focusedDay.year, _focusedDay.month + delta, 1);
+        final lastDay = DateTime(shifted.year, shifted.month + 1, 0).day;
+        final day = _focusedDay.day > lastDay ? lastDay : _focusedDay.day;
+        _focusedDay = DateTime(shifted.year, shifted.month, day);
+      } else {
+        _focusedDay = _focusedDay.add(Duration(days: 7 * delta));
+      }
+    });
+  }
+
+  String get _rangeLabel {
+    if (_view == _CalView.month) return _monthTitle;
+    final start = _weekDays.first;
+    final end = _weekDays.last;
+    final startLabel = '${_monthsShort[start.month - 1]} ${start.day}';
+    final endLabel = start.month == end.month && start.year == end.year
+        ? '${end.day}'
+        : '${_monthsShort[end.month - 1]} ${end.day}';
+    final year = start.year == end.year
+        ? '${start.year}'
+        : '${start.year}–${end.year}';
+    return '$startLabel – $endLabel, $year';
   }
 
   DateTime get _today {
@@ -67,7 +143,10 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
     await AddCalEventSheet.show(context, uid: widget.uid, existing: event);
   }
 
-  Future<void> _confirmDelete(CalEvent event) async {
+  Future<void> _confirmDelete(
+    CalEvent event,
+    List<CalEvent> loaded,
+  ) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -86,7 +165,14 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
       ),
     );
     if (ok != true) return;
-    await _repo.deleteEvent(uid: widget.uid, id: event.id);
+    final ids = <String>{
+      event.id,
+      for (final other in loaded)
+        if (CalEventDedupe.same(other, event)) other.id,
+    };
+    for (final id in ids) {
+      await _repo.deleteEvent(uid: widget.uid, id: id);
+    }
   }
 
   Future<void> _duplicate(CalEvent event) async {
@@ -105,7 +191,7 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
   }
 
   List<CalEvent> _cleanAndFilter(List<CalEvent> raw) {
-    return raw.where((e) {
+    final filtered = raw.where((e) {
       if (CalStyle.isJunkTitle(e.title)) return false;
       switch (_filter) {
         case _CalFilter.all:
@@ -120,6 +206,7 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
               e.calendarId == 'extension';
       }
     }).toList();
+    return CalEventDedupe.unique(filtered);
   }
 
   Map<DateTime, List<CalEvent>> _byDay(List<CalEvent> events) {
@@ -178,13 +265,8 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
     });
   }
 
-  String get _monthTitle {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
-    ];
-    return '${months[_focusedDay.month - 1]} ${_focusedDay.year}';
-  }
+  String get _monthTitle =>
+      '${_months[_focusedDay.month - 1]} ${_focusedDay.year}';
 
   CalEvent? _nextUp(List<CalEvent> events) {
     final now = DateTime.now();
@@ -222,6 +304,7 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    _bindStream();
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -252,7 +335,7 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
         onAdd: _addEvent,
       ),
       body: StreamBuilder<List<CalEvent>>(
-        stream: _repo.watchAgenda(widget.uid),
+        stream: _eventsStream,
         builder: (context, snap) {
           if (snap.hasError) {
             return Center(
@@ -268,7 +351,8 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
           }
 
           final loading = !snap.hasData;
-          final events = _cleanAndFilter(snap.data ?? const []);
+          final raw = snap.data ?? const <CalEvent>[];
+          final events = _cleanAndFilter(raw);
           final byDay = _byDay(events);
           final weekHas = {
             for (final d in _weekDays) d: byDay[d]?.isNotEmpty == true,
@@ -283,6 +367,8 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
                 parent: BouncingScrollPhysics(),
               ),
               slivers: [
+                if (_canStepRange)
+                  SliverToBoxAdapter(child: _rangeNav()),
                 SliverToBoxAdapter(child: _weekStrip(weekHas)),
                 SliverToBoxAdapter(child: _viewSwitcher()),
                 SliverToBoxAdapter(child: _filterChips()),
@@ -300,7 +386,7 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
                 else if (_view == _CalView.month)
                   SliverToBoxAdapter(child: _monthGrid(byDay))
                 else
-                  ..._agendaSlivers(days, byDay, events),
+                  ..._agendaSlivers(days, byDay, events, raw),
               ],
             ),
           );
@@ -313,6 +399,7 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
     List<DateTime> days,
     Map<DateTime, List<CalEvent>> byDay,
     List<CalEvent> events,
+    List<CalEvent> loaded,
   ) {
     return [
       SliverPadding(
@@ -321,9 +408,9 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
           key: _listKey,
           delegate: SliverChildListDelegate([
             for (final day in days)
-              _daySection(day, byDay[day] ?? const [], events),
+              _daySection(day, byDay[day] ?? const [], events, loaded),
             const SizedBox(height: 8),
-            _nextUpCard(events),
+            _nextUpCard(events, loaded),
             const SizedBox(height: 24),
           ]),
         ),
@@ -428,6 +515,39 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _rangeNav() {
+    final previous = _view == _CalView.month ? 'Previous month' : 'Previous week';
+    final next = _view == _CalView.month ? 'Next month' : 'Next week';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: previous,
+            onPressed: () => _stepRange(-1),
+            icon: Icon(Icons.chevron_left_rounded, color: AppColors.indigo),
+          ),
+          Expanded(
+            child: Text(
+              _rangeLabel,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AppColors.text,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: next,
+            onPressed: () => _stepRange(1),
+            icon: Icon(Icons.chevron_right_rounded, color: AppColors.indigo),
+          ),
+        ],
       ),
     );
   }
@@ -548,6 +668,7 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
     DateTime day,
     List<CalEvent> dayEvents,
     List<CalEvent> all,
+    List<CalEvent> loaded,
   ) {
     _dayKeys.putIfAbsent(day, GlobalKey.new);
     final isToday = day == _today;
@@ -586,11 +707,11 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
                 onTap: () => showCalEventDetailSheet(
                   context: context,
                   event: dayEvents[i],
-                  onDelete: () => _confirmDelete(dayEvents[i]),
+                  onDelete: () => _confirmDelete(dayEvents[i], loaded),
                   onDuplicate: () => _duplicate(dayEvents[i]),
                   onEdit: () => _editEvent(dayEvents[i]),
                 ),
-                onDelete: () => _confirmDelete(dayEvents[i]),
+                onDelete: () => _confirmDelete(dayEvents[i], loaded),
                 onDuplicate: () => _duplicate(dayEvents[i]),
                 onEdit: () => _editEvent(dayEvents[i]),
               ),
@@ -613,7 +734,7 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
     return !prev.start.isAfter(now);
   }
 
-  Widget _nextUpCard(List<CalEvent> events) {
+  Widget _nextUpCard(List<CalEvent> events, List<CalEvent> loaded) {
     final next = _nextUp(events);
     final free = _freeAfterSummary(events);
     return Material(
@@ -625,7 +746,7 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
             : () => showCalEventDetailSheet(
                   context: context,
                   event: next,
-                  onDelete: () => _confirmDelete(next),
+                  onDelete: () => _confirmDelete(next, loaded),
                   onDuplicate: () => _duplicate(next),
                   onEdit: () => _editEvent(next),
                 ),
@@ -781,7 +902,14 @@ class _DayHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const weekdays = [
+      'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+    ];
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    final color = isToday ? AppColors.indigo : AppColors.text;
     return Padding(
       padding: const EdgeInsets.only(top: 6, bottom: 10),
       child: Row(
@@ -793,35 +921,40 @@ class _DayHeader extends StatelessWidget {
               fontSize: 32,
               fontWeight: FontWeight.w800,
               height: 1,
-              color: isToday ? AppColors.indigo : AppColors.text,
+              color: color,
             ),
           ),
           const SizedBox(width: 8),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text(
-              weekdays[day.weekday - 1],
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: isToday ? AppColors.indigo : AppColors.muted,
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    months[day.month - 1],
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      height: 1.1,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    isToday
+                        ? '${weekdays[day.weekday - 1]} · Today'
+                        : weekdays[day.weekday - 1],
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: isToday ? AppColors.indigo : AppColors.muted,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          if (isToday) ...[
-            const SizedBox(width: 8),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 5),
-              child: Text(
-                'Today',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.indigo,
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
