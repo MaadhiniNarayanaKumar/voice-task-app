@@ -127,7 +127,7 @@ class _HomeScreenState extends State<HomeScreen>
       _openMia();
       setState(() => _navIndex = 0);
     } else if (index == 2) {
-      _openCategories();
+      _openCalendar();
       setState(() => _navIndex = 0);
     }
   }
@@ -430,7 +430,7 @@ class _HomeScreenState extends State<HomeScreen>
             children: [
               _navItem(0, Icons.home_rounded, 'Home'),
               _navItem(1, Icons.mic_rounded, 'Mia'),
-              _navItem(2, Icons.category_outlined, 'Categories'),
+              _navItem(2, Icons.calendar_month_rounded, 'Calendar'),
             ],
           ),
         ),

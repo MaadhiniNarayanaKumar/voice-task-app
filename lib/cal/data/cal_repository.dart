@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../models/cal_dates.dart';
 import '../models/cal_event.dart';
 import '../models/cal_event_source.dart';
 import 'cal_paths.dart';
@@ -34,10 +35,30 @@ class CalRepository {
     });
   }
 
-  /// Agenda from start of local today forward (for day-wise lists).
+  /// Agenda from the start of the week that contains today.
+  /// Finished events stay in the stream so the UI can ask about them,
+  /// then hide them from the schedule.
   Stream<List<CalEvent>> watchAgenda(String uid, {int limit = 80}) {
-    final now = DateTime.now();
-    final startOfToday = DateTime(now.year, now.month, now.day).toUtc();
+    final startOfWeek = CalDates.weekOf(CalDates.today()).first.toUtc();
+    return _col(uid)
+        .where(
+          'start',
+          isGreaterThanOrEqualTo: startOfWeek.toIso8601String(),
+        )
+        .orderBy('start')
+        .limit(limit)
+        .snapshots()
+        .map((snap) {
+      return snap.docs
+          .map((d) => CalEvent.fromMap(d.id, d.data()))
+          .toList(growable: false);
+    });
+  }
+
+  /// Events from the start of today forward. Used by Next up so the
+  /// card stays on the current date instead of the day being viewed.
+  Stream<List<CalEvent>> watchFromToday(String uid, {int limit = 40}) {
+    final startOfToday = CalDates.today().toUtc();
     return _col(uid)
         .where(
           'start',
@@ -55,7 +76,7 @@ class CalRepository {
 
   /// Upcoming events from now (agenda).
   Stream<List<CalEvent>> watchUpcoming(String uid, {int limit = 40}) {
-    final now = DateTime.now().toUtc().toIso8601String();
+    final now = CalDates.now().toUtc().toIso8601String();
     return _col(uid)
         .where('start', isGreaterThanOrEqualTo: now)
         .orderBy('start')

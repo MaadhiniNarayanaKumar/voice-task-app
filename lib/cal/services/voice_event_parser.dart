@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../core/config/config.dart';
+import '../models/cal_dates.dart';
 
 /// Draft event extracted from voice (or paste).
 class VoiceEventDraft {
@@ -32,8 +33,9 @@ class VoiceEventParser {
   static Future<VoiceEventDraft> parse(String transcript) async {
     final cleaned = _stripLeadIns(transcript.trim());
     if (cleaned.isEmpty) {
-      final now = DateTime.now();
-      final start = DateTime(now.year, now.month, now.day, now.hour + 1);
+      final now = CalDates.now();
+      final today = CalDates.today(now);
+      final start = DateTime(today.year, today.month, today.day, now.hour + 1);
       return VoiceEventDraft(
         title: 'New event',
         start: start,
@@ -141,8 +143,9 @@ class VoiceEventParser {
     }
 
     title ??= 'New event';
-    final now = DateTime.now();
-    start ??= DateTime(now.year, now.month, now.day, now.hour + 1);
+    final now = CalDates.now();
+    final today = CalDates.today(now);
+    start ??= DateTime(today.year, today.month, today.day, now.hour + 1);
     end ??= start.add(const Duration(hours: 1));
     if (!end.isAfter(start)) {
       end = start.add(const Duration(hours: 1));
@@ -173,8 +176,7 @@ class VoiceEventParser {
 
   static VoiceEventDraft _heuristic(String text, String transcript) {
     final lower = text.toLowerCase();
-    final now = DateTime.now();
-    var day = DateTime(now.year, now.month, now.day);
+    var day = CalDates.today();
     if (lower.contains('tomorrow')) {
       day = day.add(const Duration(days: 1));
     } else if (lower.contains('today')) {
@@ -229,7 +231,7 @@ class VoiceEventParser {
     String transcript,
     String apiKey,
   ) async {
-    final now = DateTime.now().toIso8601String();
+    final now = CalDates.now().toIso8601String();
     final prompt = '''
 Extract a calendar event from this voice command.
 Today's datetime (ISO local context): $now
@@ -302,8 +304,8 @@ Voice: "$text"
     final monthName = m.group(2)!;
     final day = int.parse(m.group(3)!);
     final month = _monthIndex(monthName);
-    final now = DateTime.now();
-    var year = now.year;
+    final today = CalDates.today();
+    var year = today.year;
     var hour = 9;
     var minute = 0;
     if (m.group(4) != null) {
@@ -318,7 +320,7 @@ Voice: "$text"
       if (useAp == 'am' && hour == 12) hour = 0;
     }
     var dt = DateTime(year, month, day, hour, minute);
-    if (dt.isBefore(DateTime(now.year, now.month, now.day))) {
+    if (dt.isBefore(today)) {
       dt = DateTime(year + 1, month, day, hour, minute);
     }
     return dt;

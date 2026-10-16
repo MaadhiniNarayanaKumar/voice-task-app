@@ -3,9 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_theme.dart';
-import '../../core/ui/app_components.dart';
 import '../../mia/widgets/mia_bottom_bar.dart';
 import '../data/cal_repository.dart';
+import '../models/cal_dates.dart';
 import '../models/cal_event.dart';
 import '../models/cal_event_dedupe.dart';
 import '../models/cal_event_source.dart';
@@ -15,8 +15,6 @@ import 'event_detail_sheet.dart';
 import 'voice_event_sheet.dart';
 
 enum _CalView { agenda, day, week, month }
-
-enum _CalFilter { all, work, personal, extension }
 
 /// Calendar home — week strip, agenda, filters, indigo actions.
 class CalHomeScreen extends StatefulWidget {
@@ -31,15 +29,19 @@ class CalHomeScreen extends StatefulWidget {
 class _CalHomeScreenState extends State<CalHomeScreen> {
   final _repo = CalRepository();
   final _listKey = GlobalKey();
+  final _refreshKey = GlobalKey<RefreshIndicatorState>();
   final Map<DateTime, GlobalKey> _dayKeys = {};
+  bool _refreshing = false;
 
   _CalView _view = _CalView.agenda;
-  _CalFilter _filter = _CalFilter.all;
   late DateTime _focusedDay;
+  bool _askingAttendance = false;
+  final Set<String> _attendanceAsked = {};
   DateTime? _lastSynced;
   String _syncLabel = 'Pull to refresh';
   String _streamKey = '';
   late Stream<List<CalEvent>> _eventsStream;
+  late Stream<List<CalEvent>> _nextUpStream;
 
   static const _months = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -54,8 +56,8 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    _focusedDay = DateTime(now.year, now.month, now.day);
+    _focusedDay = CalDates.today();
+    _nextUpStream = _repo.watchFromToday(widget.uid);
     _bindStream();
   }
 
@@ -121,15 +123,9 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
     return '$startLabel – $endLabel, $year';
   }
 
-  DateTime get _today {
-    final n = DateTime.now();
-    return DateTime(n.year, n.month, n.day);
-  }
+  DateTime get _today => CalDates.today();
 
-  List<DateTime> get _weekDays {
-    final start = _focusedDay.subtract(Duration(days: _focusedDay.weekday % 7));
-    return List.generate(7, (i) => start.add(Duration(days: i)));
-  }
+  List<DateTime> get _weekDays => CalDates.weekOf(_focusedDay);
 
   Future<void> _addEvent() async {
     await AddCalEventSheet.show(context, uid: widget.uid);
@@ -190,23 +186,41 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
     );
   }
 
-  List<CalEvent> _cleanAndFilter(List<CalEvent> raw) {
-    final filtered = raw.where((e) {
-      if (CalStyle.isJunkTitle(e.title)) return false;
-      switch (_filter) {
-        case _CalFilter.all:
-          return true;
-        case _CalFilter.work:
-          return e.calendarId == 'work';
-        case _CalFilter.personal:
-          return e.calendarId == 'manual' ||
-              e.source == CalEventSource.manual;
-        case _CalFilter.extension:
-          return e.source == CalEventSource.extension ||
-              e.calendarId == 'extension';
-      }
-    }).toList();
+  List<CalEvent> _clean(List<CalEvent> raw) {
+    final filtered =
+        raw.where((e) => !CalStyle.isJunkTitle(e.title)).toList();
     return CalEventDedupe.unique(filtered);
+  }
+
+  void _offerAttendancePrompt(List<CalEvent> events) {
+    if (_askingAttendance) return;
+    final pending = events
+        .where(CalDates.shouldAskAttendance)
+        .where((e) => !_attendanceAsked.contains(e.id))
+        .toList()
+      ..sort((a, b) => b.end.compareTo(a.end));
+    if (pending.isEmpty) return;
+    _askingAttendance = true;
+    final batch = List<CalEvent>.from(pending);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        for (final event in batch) {
+          if (!mounted) return;
+          _attendanceAsked.add(event.id);
+          final attended = await showDialog<bool>(
+            context: context,
+            builder: (context) => _AttendPrompt(event: event),
+          );
+          if (!mounted || attended == null) continue;
+          await _repo.updateEvent(
+            uid: widget.uid,
+            event: event.copyWith(attended: attended),
+          );
+        }
+      } finally {
+        _askingAttendance = false;
+      }
+    });
   }
 
   Map<DateTime, List<CalEvent>> _byDay(List<CalEvent> events) {
@@ -256,21 +270,30 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
   }
 
   Future<void> _refresh() async {
-    setState(() => _syncLabel = 'Syncing…');
+    setState(() {
+      _refreshing = true;
+      _syncLabel = 'Syncing…';
+    });
     await Future<void>.delayed(const Duration(milliseconds: 450));
     if (!mounted) return;
     setState(() {
-      _lastSynced = DateTime.now();
+      _refreshing = false;
+      _lastSynced = CalDates.now();
       _syncLabel = 'Synced just now';
     });
+  }
+
+  Future<void> _refreshFromButton() {
+    final indicator = _refreshKey.currentState;
+    if (indicator == null) return _refresh();
+    return indicator.show();
   }
 
   String get _monthTitle =>
       '${_months[_focusedDay.month - 1]} ${_focusedDay.year}';
 
   CalEvent? _nextUp(List<CalEvent> events) {
-    final now = DateTime.now();
-    final upcoming = events.where((e) => e.end.isAfter(now)).toList()
+    final upcoming = events.where((e) => !CalDates.isOver(e)).toList()
       ..sort((a, b) => a.start.compareTo(b.start));
     return upcoming.isEmpty ? null : upcoming.first;
   }
@@ -285,7 +308,7 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
       ..sort((a, b) => a.end.compareTo(b.end));
     if (todayEvents.isEmpty) return 'Free the rest of today';
     final last = todayEvents.last;
-    if (last.end.isBefore(DateTime.now())) return 'Free the rest of today';
+    if (CalDates.isOver(last)) return 'Free the rest of today';
     return 'Free after ${CalStyle.fmtTime(last.end)} today';
   }
 
@@ -294,7 +317,7 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
       case _CalView.day:
         return [_focusedDay];
       case _CalView.week:
-        return _weekDays;
+        return _weekDays.where((d) => byDay[d]?.isNotEmpty == true).toList();
       case _CalView.month:
         return _agendaDays(byDay);
       case _CalView.agenda:
@@ -323,18 +346,46 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
           ),
           IconButton(
             tooltip: _syncLabel,
-            onPressed: _refresh,
-            icon: Icon(Icons.sync_rounded, color: AppColors.indigo),
+            onPressed: _refreshing ? null : _refreshFromButton,
+            icon: _refreshing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(Icons.sync_rounded, color: AppColors.indigo),
           ),
         ],
       ),
       bottomNavigationBar: MiaBottomBar(
-        homeSelected: true,
         onHome: () => Navigator.of(context).maybePop(),
         onMic: _voiceEvent,
         onAdd: _addEvent,
       ),
       body: StreamBuilder<List<CalEvent>>(
+        stream: _nextUpStream,
+        builder: (context, nextSnap) {
+          final nextRaw = nextSnap.data ?? const <CalEvent>[];
+          final nextEvents = _clean(nextRaw)
+              .where((e) => !CalDates.isOver(e))
+              .toList(growable: false);
+          final next = _nextUp(nextEvents);
+          return _calendarBody(
+            next: next,
+            nextLoaded: nextRaw,
+            nextEvents: nextEvents,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _calendarBody({
+    required CalEvent? next,
+    required List<CalEvent> nextLoaded,
+    required List<CalEvent> nextEvents,
+  }) {
+    return StreamBuilder<List<CalEvent>>(
         stream: _eventsStream,
         builder: (context, snap) {
           if (snap.hasError) {
@@ -352,7 +403,10 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
 
           final loading = !snap.hasData;
           final raw = snap.data ?? const <CalEvent>[];
-          final events = _cleanAndFilter(raw);
+          final cleaned = _clean(raw);
+          if (!loading) _offerAttendancePrompt(cleaned);
+          final events =
+              cleaned.where((e) => !CalDates.isOver(e)).toList(growable: false);
           final byDay = _byDay(events);
           final weekHas = {
             for (final d in _weekDays) d: byDay[d]?.isNotEmpty == true,
@@ -360,6 +414,7 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
           final days = _visibleDays(byDay);
 
           return RefreshIndicator(
+            key: _refreshKey,
             color: AppColors.indigo,
             onRefresh: _refresh,
             child: CustomScrollView(
@@ -369,9 +424,9 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
               slivers: [
                 if (_canStepRange)
                   SliverToBoxAdapter(child: _rangeNav()),
-                SliverToBoxAdapter(child: _weekStrip(weekHas)),
+                if (_view != _CalView.month)
+                  SliverToBoxAdapter(child: _weekStrip(weekHas)),
                 SliverToBoxAdapter(child: _viewSwitcher()),
-                SliverToBoxAdapter(child: _filterChips()),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -386,21 +441,37 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
                 else if (_view == _CalView.month)
                   SliverToBoxAdapter(child: _monthGrid(byDay))
                 else
-                  ..._agendaSlivers(days, byDay, events, raw),
+                  ..._agendaSlivers(days, byDay, raw, next),
+                if (!loading)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      child: _nextUpCard(next, nextEvents, nextLoaded),
+                    ),
+                  ),
               ],
             ),
           );
         },
-      ),
-    );
+      );
   }
 
   List<Widget> _agendaSlivers(
     List<DateTime> days,
     Map<DateTime, List<CalEvent>> byDay,
-    List<CalEvent> events,
     List<CalEvent> loaded,
+    CalEvent? next,
   ) {
+    if (_view == _CalView.week && days.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            child: _noEventsMessage(),
+          ),
+        ),
+      ];
+    }
     return [
       SliverPadding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -408,14 +479,28 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
           key: _listKey,
           delegate: SliverChildListDelegate([
             for (final day in days)
-              _daySection(day, byDay[day] ?? const [], events, loaded),
+              _daySection(day, byDay[day] ?? const [], loaded, next),
             const SizedBox(height: 8),
-            _nextUpCard(events, loaded),
-            const SizedBox(height: 24),
           ]),
         ),
       ),
     ];
+  }
+
+  Widget _noEventsMessage() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: CalStyle.flatCard(borderColor: const Color(0xFFE5E7EB)),
+      child: Text(
+        'No events',
+        style: TextStyle(
+          color: AppColors.muted,
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
   }
 
   Widget _monthGrid(Map<DateTime, List<CalEvent>> byDay) {
@@ -631,48 +716,14 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
     );
   }
 
-  Widget _filterChips() {
-    Color chipColor(_CalFilter f) => switch (f) {
-          _CalFilter.all => AppColors.indigo,
-          _CalFilter.work => const Color(0xFF2563EB),
-          _CalFilter.personal => const Color(0xFF16A34A),
-          _CalFilter.extension => const Color(0xFF7C3AED),
-        };
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      child: Row(
-        children: [
-          for (final f in _CalFilter.values) ...[
-            FilterChipPill(
-              label: switch (f) {
-                _CalFilter.all => 'All',
-                _CalFilter.work => 'Work',
-                _CalFilter.personal => 'Personal',
-                _CalFilter.extension => 'Extension',
-              },
-              selected: _filter == f,
-              color: chipColor(f),
-              showDot: f != _CalFilter.all,
-              onTap: () => setState(() => _filter = f),
-            ),
-            const SizedBox(width: 8),
-          ],
-        ],
-      ),
-    );
-  }
-
   Widget _daySection(
     DateTime day,
     List<CalEvent> dayEvents,
-    List<CalEvent> all,
     List<CalEvent> loaded,
+    CalEvent? next,
   ) {
     _dayKeys.putIfAbsent(day, GlobalKey.new);
     final isToday = day == _today;
-    final now = DateTime.now();
 
     return KeyedSubtree(
       key: _dayKeys[day],
@@ -691,51 +742,37 @@ class _CalHomeScreenState extends State<CalHomeScreen> {
                 ),
                 child: Text(
                   isToday
-                      ? 'Nothing today · ${_nextUp(all) != null ? 'Next: ${_nextUp(all)!.title}' : 'You’re free'}'
+                      ? 'Nothing today · ${next != null ? 'Next: ${next.title}' : 'You’re free'}'
                       : 'Nothing scheduled',
                   style: TextStyle(color: AppColors.muted, fontSize: 13),
                 ),
               ),
             )
-          else ...[
-            for (var i = 0; i < dayEvents.length; i++) ...[
-              if (isToday && _shouldShowNowBefore(dayEvents, i, now))
-                _NowChip(),
+          else
+            for (final event in dayEvents)
               _EventCard(
-                event: dayEvents[i],
-                dimmed: isToday && dayEvents[i].end.isBefore(now),
+                event: event,
                 onTap: () => showCalEventDetailSheet(
                   context: context,
-                  event: dayEvents[i],
-                  onDelete: () => _confirmDelete(dayEvents[i], loaded),
-                  onDuplicate: () => _duplicate(dayEvents[i]),
-                  onEdit: () => _editEvent(dayEvents[i]),
+                  event: event,
+                  onDelete: () => _confirmDelete(event, loaded),
+                  onDuplicate: () => _duplicate(event),
+                  onEdit: () => _editEvent(event),
                 ),
-                onDelete: () => _confirmDelete(dayEvents[i], loaded),
-                onDuplicate: () => _duplicate(dayEvents[i]),
-                onEdit: () => _editEvent(dayEvents[i]),
+                onDelete: () => _confirmDelete(event, loaded),
+                onDuplicate: () => _duplicate(event),
+                onEdit: () => _editEvent(event),
               ),
-            ],
-            if (isToday &&
-                dayEvents.isNotEmpty &&
-                dayEvents.every((e) => !e.start.isAfter(now)))
-              _NowChip(),
-          ],
         ],
       ),
     );
   }
 
-  bool _shouldShowNowBefore(List<CalEvent> dayEvents, int index, DateTime now) {
-    final event = dayEvents[index];
-    if (!event.start.isAfter(now)) return false;
-    if (index == 0) return dayEvents.any((e) => !e.start.isAfter(now));
-    final prev = dayEvents[index - 1];
-    return !prev.start.isAfter(now);
-  }
-
-  Widget _nextUpCard(List<CalEvent> events, List<CalEvent> loaded) {
-    final next = _nextUp(events);
+  Widget _nextUpCard(
+    CalEvent? next,
+    List<CalEvent> events,
+    List<CalEvent> loaded,
+  ) {
     final free = _freeAfterSummary(events);
     return Material(
       color: Colors.transparent,
@@ -961,37 +998,67 @@ class _DayHeader extends StatelessWidget {
   }
 }
 
-class _NowChip extends StatelessWidget {
+class _AttendPrompt extends StatelessWidget {
+  const _AttendPrompt({required this.event});
+
+  final CalEvent event;
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: AppColors.indigo,
-              shape: BoxShape.circle,
+    return Dialog(
+      backgroundColor: AppColors.card,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Did you attend this event?',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppColors.text,
+              ),
             ),
-          ),
-          Expanded(
-            child: Container(
-              height: 1.5,
-              margin: const EdgeInsets.symmetric(horizontal: 8),
-              color: AppColors.indigo.withValues(alpha: 0.35),
+            const SizedBox(height: 12),
+            Text(
+              event.title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppColors.text,
+              ),
             ),
-          ),
-          Text(
-            'Now',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: AppColors.indigo,
+            const SizedBox(height: 4),
+            Text(
+              event.allDay
+                  ? CalStyle.fmtDayDate(event.start)
+                  : '${CalStyle.fmtDayDate(event.start)} · ${CalStyle.fmtTime(event.start)}',
+              style: TextStyle(fontSize: 13, color: AppColors.muted),
             ),
-          ),
-        ],
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('No'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(72, 40),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Yes'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1004,7 +1071,6 @@ class _EventCard extends StatelessWidget {
     required this.onDelete,
     required this.onDuplicate,
     required this.onEdit,
-    this.dimmed = false,
   });
 
   final CalEvent event;
@@ -1012,15 +1078,15 @@ class _EventCard extends StatelessWidget {
   final Future<void> Function() onDelete;
   final Future<void> Function() onDuplicate;
   final Future<void> Function() onEdit;
-  final bool dimmed;
 
   @override
   Widget build(BuildContext context) {
     final bar = CalStyle.barColor(event);
     final video = CalStyle.isVideoLink(event.location);
+    final now = CalDates.now();
     final soon = !event.allDay &&
-        event.start.difference(DateTime.now()).inMinutes <= 15 &&
-        event.start.isAfter(DateTime.now());
+        event.start.difference(now).inMinutes <= 15 &&
+        event.start.isAfter(now);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -1077,9 +1143,7 @@ class _EventCard extends StatelessWidget {
               if (action == 'dup') await onDuplicate();
               if (action == 'del') await onDelete();
             },
-            child: Opacity(
-              opacity: dimmed ? 0.45 : 1,
-              child: Container(
+            child: Container(
                 decoration: CalStyle.flatCard(
                   borderColor: const Color(0xFFE5E7EB),
                 ),
@@ -1200,7 +1264,6 @@ class _EventCard extends StatelessWidget {
             ),
           ),
         ),
-      ),
     );
   }
 }

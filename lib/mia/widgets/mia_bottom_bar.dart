@@ -11,23 +11,20 @@ class MiaBottomBar extends StatelessWidget {
     required this.onMic,
     required this.onAdd,
     this.tip,
-    this.homeSelected = false,
   });
 
   final VoidCallback onHome;
   final VoidCallback onMic;
   final VoidCallback onAdd;
   final Widget? tip;
-  final bool homeSelected;
 
   @override
   Widget build(BuildContext context) {
     return RaisedCenterNavBar(
       tip: tip,
       left: _item(
-        icon: homeSelected ? Icons.home_rounded : Icons.home_outlined,
+        icon: Icons.home_outlined,
         label: 'Home',
-        selected: homeSelected,
         onTap: onHome,
       ),
       right: _item(
@@ -44,9 +41,8 @@ class MiaBottomBar extends StatelessWidget {
     required IconData icon,
     required String label,
     required VoidCallback onTap,
-    bool selected = false,
   }) {
-    final color = selected ? AppColors.indigo : AppColors.muted;
+    final color = AppColors.muted;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),

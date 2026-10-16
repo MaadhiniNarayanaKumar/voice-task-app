@@ -677,17 +677,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                          child: Column(
-                            children: [
-                              _summaryCard(
-                                done: completed.length,
-                                total: all.length,
-                                dueToday: dueTodayCount,
-                                overdue: overdueCount,
-                                dueTomorrow: tomorrow.length,
-                              ),
-                              const SizedBox(height: 12),
-                              SizedBox(
+                          child: SizedBox(
                                 height: 42,
                                 child: Stack(
                                   children: [
@@ -752,8 +742,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   ],
                                 ),
                               ),
-                            ],
-                          ),
                         ),
                       ),
                     if (filtered.isEmpty && open.isEmpty)
@@ -823,15 +811,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 overdue.isEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(top: 24),
-                                child: Text(
-                                  tomorrow.isNotEmpty
-                                      ? 'All caught up for today — ${tomorrow.length} due tomorrow'
-                                      : 'Nice work — keep going!',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: AppColors.muted,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.check_rounded,
+                                      size: 18,
+                                      color: AppColors.indigo,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'All done',
+                                      style: TextStyle(
+                                        color: AppColors.muted,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                           ]),
@@ -845,88 +841,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           bottomNavigationBar: _bottomBar(),
         );
       },
-    );
-  }
-
-  Widget _summaryCard({
-    required int done,
-    required int total,
-    required int dueToday,
-    required int overdue,
-    required int dueTomorrow,
-  }) {
-    final value = total == 0 ? 0.0 : done / total;
-    final percent = (value * 100).round();
-    final subtitle = <String>[
-      if (overdue > 0) '$overdue overdue',
-      if (dueToday > 0) '$dueToday due today',
-      if (dueTomorrow > 0) '$dueTomorrow due tomorrow',
-      if (overdue == 0 && dueToday == 0 && dueTomorrow == 0)
-        'Nothing due soon',
-    ].join(' · ');
-
-    return AppCard(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 52,
-            height: 52,
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0, end: value),
-              duration: const Duration(milliseconds: 480),
-              curve: Curves.easeOutCubic,
-              builder: (context, animated, _) {
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    CircularProgressIndicator(
-                      value: animated,
-                      strokeWidth: 5.5,
-                      strokeCap: StrokeCap.round,
-                      backgroundColor: const Color(0xFFE0E7FF),
-                      color: AppColors.indigo,
-                    ),
-                    Center(
-                      child: Text(
-                        '$percent%',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$done of $total tasks completed',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: overdue > 0 ? AppColors.high : AppColors.muted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1283,63 +1197,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _emptyState() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 88,
-            height: 88,
-            decoration: BoxDecoration(
-              color: AppColors.tint,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.check_circle_outline_rounded,
-              size: 40,
-              color: AppColors.indigo,
-            ),
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.check_rounded, size: 36, color: AppColors.indigo),
+        const SizedBox(height: 8),
+        Text(
+          'All done',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: AppColors.text,
           ),
-          const SizedBox(height: 16),
-          Text(
-            "You're all caught up",
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Tap Add or the mic to create a task',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.muted),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Try: “Buy milk tomorrow, high priority, groceries”',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: AppColors.indigo,
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: () => _openTypeSheet(),
-            child: const Text('Add your first task'),
-          ),
-          TextButton.icon(
-            onPressed: _openVoiceSheet,
-            icon: const Icon(Icons.mic_rounded),
-            label: const Text('Speak a task'),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _bottomBar() {
     return MiaBottomBar(
-      homeSelected: true,
       tip: _showMicTip
           ? RaisedCenterNavTip(
               label: 'Tap and say a task',

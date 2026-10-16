@@ -7,6 +7,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/voice/cloud_speech_service.dart';
 import '../../core/voice/listening_sheet.dart';
 import '../data/cal_repository.dart';
+import '../models/cal_dates.dart';
 import '../models/cal_event_source.dart';
 import '../services/voice_event_parser.dart';
 
@@ -161,12 +162,12 @@ class _VoiceEventSheetState extends State<_VoiceEventSheet>
   }
 
   Future<void> _pickWhen({required bool isStart}) async {
-    final initial = isStart ? (_start ?? DateTime.now()) : (_end ?? DateTime.now());
+    final initial = isStart ? (_start ?? CalDates.now()) : (_end ?? CalDates.now());
     final date = await showDatePicker(
       context: context,
       initialDate: initial,
-      firstDate: DateTime.now().subtract(const Duration(days: 1)),
-      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+      firstDate: CalDates.today().subtract(const Duration(days: 1)),
+      lastDate: CalDates.today().add(const Duration(days: 365 * 2)),
     );
     if (date == null || !mounted) return;
     TimeOfDay? time;

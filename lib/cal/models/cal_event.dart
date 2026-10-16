@@ -15,6 +15,7 @@ class CalEvent {
     this.recurring = false,
     this.description,
     this.externalId,
+    this.attended,
   });
 
   final String id;
@@ -34,6 +35,9 @@ class CalEvent {
   /// Provider id when [source] is google / ics / extension remote id.
   final String? externalId;
 
+  /// Set after the user answers whether they attended a finished event.
+  final bool? attended;
+
   CalEvent copyWith({
     String? title,
     DateTime? start,
@@ -46,6 +50,7 @@ class CalEvent {
     String? description,
     CalEventSource? source,
     String? externalId,
+    bool? attended,
   }) {
     return CalEvent(
       id: id,
@@ -60,6 +65,7 @@ class CalEvent {
       description: description ?? this.description,
       source: source ?? this.source,
       externalId: externalId ?? this.externalId,
+      attended: attended ?? this.attended,
     );
   }
 
@@ -76,6 +82,7 @@ class CalEvent {
       'description': description,
       'source': source.wireName,
       'externalId': externalId,
+      'attended': attended,
     };
   }
 
@@ -106,6 +113,7 @@ class CalEvent {
       description: map['description'] as String?,
       source: CalEventSourceX.fromWire(map['source'] as String?),
       externalId: map['externalId'] as String?,
+      attended: map['attended'] as bool?,
     );
   }
 }

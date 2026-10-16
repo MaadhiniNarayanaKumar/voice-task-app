@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../data/cal_repository.dart';
+import '../models/cal_dates.dart';
 import '../models/cal_event.dart';
 import '../models/cal_event_source.dart';
 import '../services/voice_event_parser.dart';
@@ -69,8 +70,9 @@ class _AddCalEventSheetState extends State<AddCalEventSheet> {
       _end = existing.end;
       _allDay = existing.allDay;
     } else {
-      final now = DateTime.now();
-      _start = DateTime(now.year, now.month, now.day, now.hour + 1);
+      final now = CalDates.now();
+      final today = CalDates.today(now);
+      _start = DateTime(today.year, today.month, today.day, now.hour + 1);
       _end = _start.add(const Duration(hours: 1));
     }
   }
@@ -104,8 +106,8 @@ class _AddCalEventSheetState extends State<AddCalEventSheet> {
     final date = await showDatePicker(
       context: context,
       initialDate: initial,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+      firstDate: CalDates.today().subtract(const Duration(days: 365)),
+      lastDate: CalDates.today().add(const Duration(days: 365 * 3)),
     );
     if (date == null || !mounted) return;
 

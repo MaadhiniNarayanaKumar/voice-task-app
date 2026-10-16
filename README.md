@@ -2,8 +2,10 @@
 
 Flutter app with a **parent shell** (`lib/app/`), reusable **core** (`lib/core/`), **Mia** tasks (`lib/mia/`), and **Calendar** (`lib/cal/`).
 
-Companion Chrome extension (separate repo):
-[mia-calendar-extension](https://github.com/MaadhiniNarayanaKumar/mia-calendar-extension)
+Companion Chrome extensions (separate repos):
+
+- [mia-calendar-extension](https://github.com/MaadhiniNarayanaKumar/mia-calendar-extension)
+- [mia-task-extension](https://github.com/MaadhiniNarayanaKumar/mia-task-extension)
 
 ---
 
@@ -12,11 +14,13 @@ Companion Chrome extension (separate repo):
 | Area | Status |
 |------|--------|
 | Parent home (2×2 grid: Voice, Add task, Categories, Calendar) | **On** |
+| Bottom bar: Home, Mia, Calendar | **On** |
 | Profile sidebar → Settings / Open Mia | **On** |
 | Theme packs (Mia / Focus / Cal) + Settings appearance | **On** |
+| App icon (lavender M) | **On** |
 | Mia tasks, categories, voice (needs `.env` keys) | **On** |
 | Calendar agenda + add event (Firestore) | **On** |
-| Chrome extension → Firestore events | **On** (separate repo) |
+| Chrome extensions → Firestore events and tasks | **On** (separate repos) |
 | Firebase Auth login UI | **Off** (`skipSignIn = true` → `local-guest`) |
 | Google Calendar OAuth sync | **Removed / deferred** |
 | FCM push | **Off** |
@@ -58,25 +62,34 @@ Full-restart after editing `.env` (not hot reload).
 
 ## 3. Calendar (no Google required)
 
-Events: `users/{uid}/events` with a **source** field (`manual` / `extension`).
+Events: `users/{uid}/events` with a **source** field (`manual` / `extension`). Today’s date is the reference for the week, agenda, month, and new events.
 
 | Feature | Status |
 |---------|--------|
-| Day-wise agenda (Today / Tomorrow / …) | **On** |
-| Week strip, Agenda / Day / Week / Month | **On** |
+| Agenda / Day / Week / Month | **On** |
+| One calendar at a time (week strip, or month grid) | **On** |
+| Week view lists upcoming events, or one “No events” line | **On** |
+| Finished events hidden; “Did you attend this event?” prompt | **On** |
+| Work / Personal / Extension filters | **Removed** |
 | Add event (type + **Parse invite** paste) | **On** |
 | Voice add event (mic) | **On** (needs AssemblyAI in `.env`) |
+| Refresh button and pull-to-refresh | **On** (same spinner) |
 | Chrome extension paste/parse/scrape | **On** (companion repo) |
 
-**In app:** Home → Calendar → mic or **Add**. Swipe to delete; long-press to edit.
+**In app:** Home → Calendar (tab or Quick actions) → mic or **Add**. Swipe to delete; long-press to edit. The tasks and calendar bottom bars match, with no selected highlight.
+
+An event that has ended drops off the schedule. The app asks **Did you attend this event?** and stores `attended` (`true` / `false`) so it does not ask again.
 
 ---
 
-## 4. Chrome extension
+## 4. Chrome extensions
 
-Repo: [mia-calendar-extension](https://github.com/MaadhiniNarayanaKumar/mia-calendar-extension)
+| Repo | Writes |
+|------|--------|
+| [mia-calendar-extension](https://github.com/MaadhiniNarayanaKumar/mia-calendar-extension) | `users/{uid}/events` |
+| [mia-task-extension](https://github.com/MaadhiniNarayanaKumar/mia-task-extension) | `users/{uid}/tasks` |
 
-Clone next to this app (or anywhere), load unpacked in Chrome, and point `config.js` at the same Firebase project / `local-guest` uid.
+Clone next to this app (or anywhere), load unpacked in Chrome, and point each `config.js` at the same Firebase project / `local-guest` uid.
 
 ---
 
@@ -86,6 +99,8 @@ Clone next to this app (or anywhere), load unpacked in Chrome, and point `config
 |-----|--------|
 | `Mia.open` / `Mia.quickAddTask` / `Mia.todaySummary` | **On** |
 | Voice intents, categories, dashboard | **On** |
+| Completion progress card (“X of Y completed”) | **Removed** |
+| Empty list | **All done** with a check icon |
 
 ---
 
@@ -102,5 +117,5 @@ Requires Firebase (`firebase_options.dart`). Firestore rules currently allow ope
 
 ## 7. Security
 
-- Keep real keys in **`.env`** (gitignored). Extension secrets live in that repo’s `config.js`.
+- Keep real keys in **`.env`** (gitignored). Extension secrets live in each repo’s `config.js`.
 - Rotate any keys that were ever committed to source.
