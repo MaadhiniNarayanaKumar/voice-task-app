@@ -119,3 +119,9 @@ Requires Firebase (`firebase_options.dart`). Firestore rules currently allow ope
 
 - Keep real keys in **`.env`** (gitignored). Extension secrets live in each repo’s `config.js`.
 - Rotate any keys that were ever committed to source.
+
+---
+
+## 8. Portfolio
+
+The project page is on the portfolio: [maadhiniportfolio.vercel.app/projects/mia-voice-task-app](https://maadhiniportfolio.vercel.app/projects/mia-voice-task-app).
